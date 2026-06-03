@@ -24,6 +24,7 @@ const menuItems = [
   { path: '/messages', icon: 'ChatDotRound', label: '站内消息', hint: 'Continue follow-up conversations' },
   { path: '/profile/setup', icon: 'User', label: '个人中心', hint: 'Profile, skills, and identity' },
   { path: '/settings', icon: 'Setting', label: '系统设置', hint: 'Model and environment settings' },
+  { path: '/admin', icon: 'Monitor', label: '管理后台', hint: 'Dashboard, users, needs', admin: true },
 ]
 
 const activeMenu = computed(() => {
@@ -71,7 +72,7 @@ const pagePill = computed(() => {
   if (route.path.includes('/matches')) return 'Decision Surface'
   if (route.path.startsWith('/needs/applications')) return 'Participant View'
   if (route.path.startsWith('/messages')) return 'Follow-up'
-  return 'Product Demo'
+  return '在线'
 })
 
 const userCampus = computed(() => {
@@ -80,7 +81,7 @@ const userCampus = computed(() => {
     const campus = extra.campus
     if (typeof campus === 'string' && campus.trim()) return campus
   }
-  return auth.user?.school || 'Demo Account'
+  return auth.user?.school || '校园用户'
 })
 
 function go(path: string) {
@@ -155,7 +156,7 @@ function handleLogout() {
         </div>
         <div v-show="!collapsed" class="brand-copy">
           <span class="brand-title">Campus AI Match</span>
-          <span class="brand-subtitle">Hackathon Demo</span>
+          <span class="brand-subtitle">校园AI互助匹配</span>
         </div>
       </div>
 
@@ -165,14 +166,14 @@ function handleLogout() {
       </div>
 
       <nav class="sidebar-nav">
-        <button
-          v-for="item in menuItems"
-          :key="item.path"
-          type="button"
-          class="nav-item"
-          :class="{ active: activeMenu === item.path }"
-          @click="go(item.path)"
-        >
+        <template v-for="item in menuItems" :key="item.path">
+          <button
+            v-if="!item.admin || auth.user?.role === 'admin'"
+            type="button"
+            class="nav-item"
+            :class="{ active: activeMenu === item.path }"
+            @click="go(item.path)"
+          >
           <span class="nav-icon">
             <el-icon :size="18"><component :is="item.icon" /></el-icon>
           </span>
@@ -181,6 +182,7 @@ function handleLogout() {
             <span class="nav-hint">{{ item.hint }}</span>
           </span>
         </button>
+        </template>
       </nav>
 
       <div class="sidebar-footer">
@@ -235,7 +237,7 @@ function handleLogout() {
         <div class="topbar-right">
           <div class="status-chip">
             <span class="status-dot" />
-            <span>Demo Ready</span>
+            <span>运行中</span>
           </div>
           <el-dropdown trigger="click" placement="bottom-end">
             <el-badge :value="notifyCount" :hidden="notifyCount === 0" :max="99">

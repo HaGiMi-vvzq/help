@@ -38,7 +38,7 @@ from app.skills.task_planner import TaskPlannerSkill
 from app.skills.context_summarizer import ContextSummarizerSkill
 from app.skills.semantic_router import SemanticRouterSkill
 
-from app.routers import auth, profile, needs, messages, agents, settings
+from app.routers import auth, profile, needs, messages, agents, settings, admin
 
 
 class JsonFormatter(logging.Formatter):
@@ -59,13 +59,29 @@ def _setup_logging():
     fmt = JsonFormatter() if not app_settings.DEBUG else logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
-    handler: logging.Handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(fmt)
-    handler.setLevel(level)
+
     root = logging.getLogger()
     root.handlers.clear()
     root.setLevel(level)
-    root.addHandler(handler)
+
+    # Console handler (stderr)
+    console_handler: logging.Handler = logging.StreamHandler(sys.stderr)
+    console_handler.setFormatter(fmt)
+    console_handler.setLevel(level)
+    root.addHandler(console_handler)
+
+    # File handler with rotation (always enabled for production audit)
+    logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    file_handler = RotatingFileHandler(
+        os.path.join(logs_dir, "app.log"),
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=10,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(fmt)
+    file_handler.setLevel(level)
+    root.addHandler(file_handler)
 
 
 _setup_logging()
@@ -240,12 +256,25 @@ def create_app() -> FastAPI:
     app.include_router(messages.router)
     app.include_router(agents.router)
     app.include_router(settings.router)
+    app.include_router(admin.router)
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     GRAPH_PATH = os.path.join(BASE_DIR, "..", "skill_graph.json")
 
     @app.on_event("startup")
     async def startup():
+        # Refuse to start if SECRET_KEY is not configured
+        if not app_settings.SECRET_KEY:
+            logger.critical(
+                "SECRET_KEY is not configured. Set it in backend/.env or via environment variable. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            )
+            sys.exit(1)
+
+        # Logs directory
+        logs_dir = os.path.join(BASE_DIR, "..", "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+
         backup_db()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

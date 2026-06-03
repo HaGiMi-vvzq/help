@@ -10,9 +10,43 @@ from app.skills.registry import SkillRegistry
 from app.knowledge.skill_graph import get_skill_graph
 
 
+MIN_PASSWORD_LENGTH = 6
+
+
+def validate_password_strength(password: str) -> str | None:
+    """Return error message if password is too weak, None if acceptable."""
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return f"密码长度不能少于 {MIN_PASSWORD_LENGTH} 位"
+    if len(password) > 128:
+        return "密码长度不能超过 128 位"
+    if " " in password:
+        return "密码不能包含空格"
+    return None
+
+
+def validate_username(username: str) -> str | None:
+    """Return error message if username is invalid, None if acceptable."""
+    username = username.strip()
+    if len(username) < 2:
+        return "用户名长度不能少于 2 位"
+    if len(username) > 20:
+        return "用户名长度不能超过 20 位"
+    if not username.replace("_", "").replace("-", "").isalnum():
+        return "用户名只能包含字母、数字、下划线和连字符"
+    return None
+
+
 async def register(
     db: AsyncSession, data: RegisterRequest, event_bus: EventBus | None = None
 ) -> AuthResponse:
+    # Validate username
+    if err := validate_username(data.username):
+        raise ValueError(err)
+
+    # Validate password strength
+    if err := validate_password_strength(data.password):
+        raise ValueError(err)
+
     result = await db.execute(select(User).where(User.username == data.username))
     if result.scalar_one_or_none():
         raise ValueError("用户名已存在")

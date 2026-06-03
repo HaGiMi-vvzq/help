@@ -53,9 +53,27 @@ const needTemplates = [
     selection_mode: 'multi' as const,
   },
   {
+    type: '组队',
+    title: '蓝桥杯/ACM算法竞赛组队',
+    description: '寻找算法竞赛队友一起刷题训练。我目前掌握 C++ 和基础数据结构，希望找到能一起参加蓝桥杯或 ACM 区域赛的同学，每周固定时间训练和复盘。',
+    selection_mode: 'multi' as const,
+  },
+  {
+    type: '组队',
+    title: '大创/互联网+项目招募',
+    description: '正在筹备大学生创新创业项目，需要不同方向的同学加入。项目方向偏技术应用，欢迎对产品设计、商业计划书或技术开发感兴趣的同学联系。',
+    selection_mode: 'multi' as const,
+  },
+  {
     type: '求助',
     title: '课程作业/项目技术求助',
     description: '我在课程项目中遇到技术问题，希望找一位熟悉相关方向的同学一起梳理思路。希望对方能帮我定位问题、讲清楚关键知识点，并给出可执行的改进建议。',
+    selection_mode: 'single' as const,
+  },
+  {
+    type: '求助',
+    title: '考试/面试经验指导',
+    description: '正在准备即将到来的考试或面试，希望能请教有经验的同学。主要想了解复习重点、常见题型和面试流程，希望能约一次线上交流。',
     selection_mode: 'single' as const,
   },
   {
@@ -64,15 +82,33 @@ const needTemplates = [
     description: '我希望和同学进行技能交换：我可以分享自己擅长的内容，也想学习对方熟悉的方向。适合每周约定一次交流，互相给反馈、一起推进小作品。',
     selection_mode: 'multi' as const,
   },
+  {
+    type: '技能交换',
+    title: '语言/口语练习交换',
+    description: '我想练习英语口语或某个方向的专业表达，同时可以帮助对方学习我擅长的技术或课程内容。希望找到能定期练习、互相纠正的学习伙伴。',
+    selection_mode: 'single' as const,
+  },
 ]
 
 const templateOptions = computed(() => needTemplates.filter(t => t.type === form.type))
 
-function applyTemplate(template: typeof needTemplates[number]) {
-  form.title = template.title
-  form.description = template.description
-  form.selection_mode = template.selection_mode
-  ElMessage.success('已套用需求模板')
+// Template edit dialog
+const showTemplateDialog = ref(false)
+const editingTemplate = reactive({ title: '', description: '', selection_mode: 'single' as 'single' | 'multi' })
+
+function openTemplateEditor(template: typeof needTemplates[number]) {
+  editingTemplate.title = template.title
+  editingTemplate.description = template.description
+  editingTemplate.selection_mode = template.selection_mode
+  showTemplateDialog.value = true
+}
+
+function confirmTemplateApply() {
+  form.title = editingTemplate.title
+  form.description = editingTemplate.description
+  form.selection_mode = editingTemplate.selection_mode
+  showTemplateDialog.value = false
+  ElMessage.success('已套用并自定义需求模板')
 }
 
 watch(
@@ -144,20 +180,14 @@ function acceptPreview() {
   ElMessage.success('已填入描述')
 }
 
-function retryWithFeedback(direction: 'more' | 'rewrite') {
-  // Modify description and re-polish/generate with user's adjustment intent
-  if (direction === 'more') {
-    if (previewMode.value === 'polish') {
-      form.description = previewText.value  // Accept, then polish again
-      showPreview.value = false
-      setTimeout(() => handlePolish(), 100)
-    } else {
-      showPreview.value = false
-      setTimeout(() => handleGenerate(), 100)
-    }
+function retryAi() {
+  if (previewMode.value === 'polish') {
+    form.description = previewText.value
+    showPreview.value = false
+    setTimeout(() => handlePolish(), 100)
   } else {
     showPreview.value = false
-    // Let user modify description first, then they can polish again
+    setTimeout(() => handleGenerate(), 100)
   }
 }
 
@@ -197,48 +227,87 @@ async function submit() {
     <el-card shadow="never" class="page-card">
       <el-form label-position="top" class="create-form">
 
-        <!-- Type selector -->
+        <!-- Type selector + selection mode -->
         <el-form-item label="需求类型">
-          <div class="type-selector">
-            <div
-              v-for="t in typeOptions"
-              :key="t.value"
-              class="type-card"
-              :class="{ selected: form.type === t.value }"
-              @click="form.type = t.value"
-            >
-              <span class="type-icon">{{ t.icon }}</span>
-              <span class="type-label">{{ t.label }}</span>
-              <span class="type-desc">{{ t.desc }}</span>
+          <div class="type-area">
+            <div class="type-pills">
+              <button
+                v-for="t in typeOptions"
+                :key="t.value"
+                type="button"
+                class="type-pill"
+                :class="{ selected: form.type === t.value }"
+                @click="form.type = t.value"
+              >
+                <span class="pill-icon">{{ t.icon }}</span>
+                <span class="pill-label">{{ t.label }}</span>
+              </button>
+            </div>
+            <div class="selection-toggle">
+              <button
+                type="button"
+                class="toggle-btn"
+                :class="{ active: form.selection_mode === 'single' }"
+                @click="form.selection_mode = 'single'"
+              >
+                单人匹配
+              </button>
+              <button
+                type="button"
+                class="toggle-btn"
+                :class="{ active: form.selection_mode === 'multi' }"
+                @click="form.selection_mode = 'multi'"
+              >
+                多人组队
+              </button>
             </div>
           </div>
         </el-form-item>
 
-        <!-- Selection mode -->
-        <el-form-item label="匹配方式">
-          <el-radio-group v-model="form.selection_mode">
-            <el-radio value="single">单选（从匹配结果中选1人）</el-radio>
-            <el-radio value="multi">多选（可选择多人合作）</el-radio>
-          </el-radio-group>
-        </el-form-item>
-
-        <!-- Template library -->
-        <el-form-item label="需求模板库">
-          <div class="template-list">
+        <!-- Quick templates -->
+        <el-form-item label="快速模板">
+          <div class="template-chips">
             <button
               v-for="tpl in templateOptions"
               :key="tpl.title"
               type="button"
-              class="template-item"
-              @click="applyTemplate(tpl)"
+              class="template-chip"
+              @click="openTemplateEditor(tpl)"
             >
-              <span class="template-title">{{ tpl.title }}</span>
-              <span class="template-desc">{{ tpl.description.slice(0, 42) }}...</span>
+              {{ tpl.title }}
             </button>
           </div>
         </el-form-item>
 
-        <!-- Title with generate button -->
+        <!-- Template edit dialog -->
+        <el-dialog v-model="showTemplateDialog" title="自定义模板内容" width="560px" :close-on-click-modal="false">
+          <el-form label-position="top">
+            <el-form-item label="标题">
+              <el-input v-model="editingTemplate.title" maxlength="60" show-word-limit />
+            </el-form-item>
+            <el-form-item label="详细描述">
+              <el-input
+                v-model="editingTemplate.description"
+                type="textarea"
+                :rows="6"
+                maxlength="500"
+                show-word-limit
+              />
+            </el-form-item>
+            <el-form-item label="匹配方式">
+              <el-radio-group v-model="editingTemplate.selection_mode">
+                <el-radio value="single">单选（选1人）</el-radio>
+                <el-radio value="multi">多选（可选多人）</el-radio>
+              </el-radio-group>
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="showTemplateDialog = false">取消</el-button>
+            <el-button type="primary" @click="confirmTemplateApply">确认套用</el-button>
+          </template>
+        </el-dialog>
+
+        <!-- Title with AI generate -->
         <el-form-item label="标题">
           <div class="input-with-ai">
             <el-input
@@ -248,7 +317,7 @@ async function submit() {
               show-word-limit
               class="flex-1"
             />
-            <el-tooltip content="AI根据标题生成完整描述（参考你的历史风格）" placement="top">
+            <el-tooltip content="AI根据标题生成完整描述" placement="top">
               <el-button
                 :disabled="!hasTitle"
                 :loading="generating"
@@ -264,7 +333,7 @@ async function submit() {
           </div>
         </el-form-item>
 
-        <!-- Description with polish button + preview area -->
+        <!-- Description with AI polish + preview -->
         <el-form-item label="详细描述">
           <el-input
             v-model="form.description"
@@ -300,18 +369,15 @@ async function submit() {
             <div class="preview-body">{{ previewText }}</div>
             <div class="preview-actions">
               <el-button size="small" @click="rejectPreview">取消</el-button>
-              <el-button size="small" @click="retryWithFeedback('more')" :loading="polishing || generating">
+              <el-button size="small" @click="retryAi" :loading="polishing || generating">
                 <el-icon :size="13"><Refresh /></el-icon> 再来一次
-              </el-button>
-              <el-button size="small" @click="retryWithFeedback('rewrite')">
-                <el-icon :size="13"><EditPen /></el-icon> 修改后重试
               </el-button>
               <el-button size="small" type="primary" @click="acceptPreview">满意，填入</el-button>
             </div>
           </div>
         </el-form-item>
 
-        <!-- Submit button -->
+        <!-- Submit -->
         <el-button
           type="primary"
           :loading="loading"
@@ -337,83 +403,120 @@ async function submit() {
   font-size: 20px;
   font-weight: 600;
   margin: 0 0 20px 0;
-  color: #1a1a2e;
+  color: var(--text-primary);
 }
 
 .page-card {
-  border: 1px solid #e8e8e8 !important;
-  border-radius: 8px !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-lg) !important;
 }
 
 .create-form :deep(.el-form-item__label) {
   font-size: 14px;
   font-weight: 500;
-  color: #1a1a2e;
+  color: var(--text-primary);
 }
 
-/* -- Type selector -- */
-.type-selector {
+/* -- Type area: pills + selection toggle -- */
+.type-area {
   display: flex;
+  align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
   width: 100%;
 }
-.type-card {
-  flex: 1;
-  padding: 16px 10px;
-  text-align: center;
-  border: 2px solid #e8e8e8;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
+
+.type-pills {
   display: flex;
-  flex-direction: column;
+  gap: 8px;
+}
+
+.type-pill {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #fff;
-}
-.type-card:hover { border-color: #0969da; }
-.type-card.selected {
-  border-color: #0969da;
-  background: #eef5ff;
-}
-.type-icon { font-size: 26px; }
-.type-label { font-size: 14px; font-weight: 600; color: #1a1a2e; }
-.type-desc { font-size: 12px; color: #656d76; }
-
-/* -- Templates -- */
-.template-list {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-  width: 100%;
-}
-.template-item {
-  border: 1px solid #d0d7de;
-  border-radius: 8px;
-  background: #fff;
-  padding: 10px 12px;
-  text-align: left;
+  padding: 8px 18px;
+  border: 1.5px solid var(--border-soft);
+  border-radius: var(--radius-xl);
+  background: var(--bg-panel);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+  font-size: 14px;
+  color: var(--text-primary);
 }
-.template-item:hover {
-  border-color: #0969da;
-  background: #f6f8fa;
+
+.type-pill:hover {
+  border-color: var(--color-primary-hover);
 }
-.template-title {
-  display: block;
-  font-size: 13px;
+
+.type-pill.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
   font-weight: 600;
-  color: #1f2328;
 }
-.template-desc {
-  display: block;
-  margin-top: 3px;
-  font-size: 12px;
-  color: #656d76;
+
+.pill-icon { font-size: 18px; }
+.pill-label { white-space: nowrap; }
+
+.selection-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel-muted);
+}
+
+.toggle-btn {
+  padding: 5px 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.toggle-btn.active {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
+}
+
+.toggle-btn:hover:not(.active) {
+  color: var(--text-primary);
+}
+
+/* -- Templates: horizontal chip row -- */
+.template-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.template-chip {
+  flex-shrink: 0;
+  padding: 6px 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.template-chip:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
 }
 
 /* -- Input with AI button -- */
@@ -434,32 +537,32 @@ async function submit() {
 }
 .desc-hint {
   font-size: 12px;
-  color: #656d76;
+  color: var(--text-tertiary);
 }
 
 /* -- Preview panel -- */
 .preview-panel {
   margin-top: 12px;
-  border: 1px solid #d0d7de;
-  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
   overflow: hidden;
-  background: #f6f8fa;
+  background: var(--bg-panel-muted);
 }
 .preview-header {
   padding: 10px 14px;
-  border-bottom: 1px solid #d0d7de;
-  background: #fff;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-panel);
 }
 .preview-label {
   font-size: 13px;
   font-weight: 600;
-  color: #0969da;
+  color: var(--color-primary);
 }
 .preview-body {
   padding: 14px;
   font-size: 14px;
   line-height: 1.7;
-  color: #1f2328;
+  color: var(--text-primary);
   white-space: pre-wrap;
   min-height: 80px;
 }
@@ -467,8 +570,8 @@ async function submit() {
   display: flex;
   gap: 8px;
   padding: 10px 14px;
-  border-top: 1px solid #d0d7de;
-  background: #fff;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-panel);
   justify-content: flex-end;
 }
 
@@ -476,16 +579,35 @@ async function submit() {
 .submit-btn {
   width: 100%;
   margin-top: 8px;
-  background-color: #0969da;
-  border-color: #0969da;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
   font-size: 15px;
   height: 44px;
 }
 
 /* -- Responsive -- */
 @media (max-width: 768px) {
-  .type-selector { flex-direction: column; gap: 8px; }
-  .input-with-ai { flex-direction: column; gap: 8px; }
-  .ai-btn { width: 100%; }
+  .type-area {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .type-pills {
+    width: 100%;
+  }
+
+  .type-pill {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .input-with-ai {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .ai-btn {
+    width: 100%;
+  }
 }
 </style>

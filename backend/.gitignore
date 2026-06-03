@@ -4,6 +4,7 @@ app.db-shm
 db_backups/
 skill_graph.json
 uploads/
+logs/
 __pycache__/
 *.pyc
 .env

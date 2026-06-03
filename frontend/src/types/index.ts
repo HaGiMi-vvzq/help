@@ -1,6 +1,8 @@
 export interface User {
   id: number
   username: string
+  role: string
+  is_active: boolean
   avatar?: string
   bio?: string
   skill_tags?: string[]

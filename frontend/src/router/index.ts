@@ -83,6 +83,24 @@ const router = createRouter({
       meta: { auth: true },
     },
     {
+      path: '/admin',
+      name: 'AdminDashboard',
+      component: () => import('@/views/admin/AdminDashboard.vue'),
+      meta: { auth: true, admin: true },
+    },
+    {
+      path: '/admin/users',
+      name: 'AdminUsers',
+      component: () => import('@/views/admin/AdminUsers.vue'),
+      meta: { auth: true, admin: true },
+    },
+    {
+      path: '/admin/needs',
+      name: 'AdminNeeds',
+      component: () => import('@/views/admin/AdminNeeds.vue'),
+      meta: { auth: true, admin: true },
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
       component: () => import('@/views/NotFoundView.vue'),
@@ -97,6 +115,9 @@ router.beforeEach((to, _from) => {
     return '/login'
   }
   if (to.meta.guest && auth.isLoggedIn) {
+    return '/'
+  }
+  if (to.meta.admin && auth.user?.role !== 'admin') {
     return '/'
   }
 })

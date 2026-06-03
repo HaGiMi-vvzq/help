@@ -19,12 +19,6 @@ const registerForm = reactive({
   confirmPassword: '',
 })
 
-const demoAccounts = [
-  { username: 'alice', password: '123456', label: '推荐主视角', note: 'Agent、匹配、消息主链' },
-  { username: 'bob', password: '123456', label: '候选合作者', note: '看被联系与画像信息' },
-  { username: 'eve', password: '123456', label: '设计方向', note: '看设计类能力与需求' },
-]
-
 const loginRules: FormRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [
@@ -66,17 +60,6 @@ function resetRegisterForm() {
   registerForm.password = ''
   registerForm.confirmPassword = ''
   registerFormRef.value?.resetFields()
-}
-
-function applyDemoAccount(username: string, password: string) {
-  activeTab.value = 'login'
-  loginForm.username = username
-  loginForm.password = password
-}
-
-async function loginAsDemo(username: string, password: string) {
-  applyDemoAccount(username, password)
-  await handleLogin()
 }
 
 async function handleLogin() {
@@ -121,7 +104,7 @@ async function handleRegister() {
     <div class="login-wrapper">
       <!-- Left branding panel -->
       <div class="login-branding">
-        <span class="branding-kicker">Hackathon Demo</span>
+        <span class="branding-kicker">校园AI互助匹配</span>
         <h2 class="branding-title">校园AI互助匹配</h2>
         <p class="branding-desc">通过 AI 语义理解与智能匹配，帮你找到最合适的队友。<br />无论是课程求助、项目组队还是技能交换，这里都能精准连接。</p>
         <div class="branding-features">
@@ -138,10 +121,6 @@ async function handleRegister() {
             <span>校园专属网络</span>
           </div>
         </div>
-        <div class="demo-reset-note">
-          <strong>演示数据重置</strong>
-          <p>如需回到初始演示状态，在 `backend` 目录依次运行 `python reset_db.py` 与 `python seed.py`。</p>
-        </div>
       </div>
 
       <!-- Right login card -->
@@ -149,33 +128,6 @@ async function handleRegister() {
         <div class="card-header-text">
           <h3 class="card-title">{{ activeTab === 'login' ? '欢迎回来' : '创建账号' }}</h3>
           <p class="card-subtitle">{{ activeTab === 'login' ? '登录你的账号继续使用' : '注册一个新账号开始使用' }}</p>
-        </div>
-
-        <div v-if="activeTab === 'login'" class="demo-account-panel">
-          <div class="demo-account-header">
-            <span>演示账号</span>
-            <small>密码统一为 123456</small>
-          </div>
-          <div class="demo-account-list">
-            <button
-              v-for="account in demoAccounts"
-              :key="account.username"
-              type="button"
-              class="demo-account-item"
-              @click="applyDemoAccount(account.username, account.password)"
-            >
-              <div class="demo-account-main">
-                <strong>{{ account.username }}</strong>
-                <span>{{ account.label }}</span>
-              </div>
-              <div class="demo-account-actions">
-                <small>{{ account.note }}</small>
-                <el-button text type="primary" @click.stop="loginAsDemo(account.username, account.password)">
-                  进入
-                </el-button>
-              </div>
-            </button>
-          </div>
         </div>
 
         <el-tabs v-model="activeTab" class="login-tabs" @tab-change="activeTab === 'register' && resetRegisterForm()">
@@ -330,33 +282,6 @@ async function handleRegister() {
   gap: 14px;
 }
 
-.demo-reset-note {
-  margin-top: 28px;
-  padding: 16px 18px;
-  border: 1px solid #d8e4f5;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.demo-reset-note strong {
-  display: block;
-  font-size: 14px;
-  color: #1a1a2e;
-}
-
-.demo-reset-note p {
-  margin: 8px 0 0;
-  font-size: 13px;
-  line-height: 1.7;
-  color: rgba(0, 0, 0, 0.58);
-}
-
-.demo-reset-note code {
-  font-family: Consolas, 'Courier New', monospace;
-  font-size: 12px;
-  color: #0f172a;
-}
-
 .feature-item {
   display: flex;
   align-items: center;
@@ -400,78 +325,6 @@ async function handleRegister() {
   font-size: 14px;
   color: rgba(0, 0, 0, 0.45);
   margin: 0;
-}
-
-.demo-account-panel {
-  margin-bottom: 18px;
-  padding: 14px;
-  border: 1px solid #d8e4f5;
-  border-radius: 10px;
-  background: #f8fbff;
-}
-
-.demo-account-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.demo-account-header span {
-  font-size: 14px;
-  font-weight: 700;
-  color: #1a1a2e;
-}
-
-.demo-account-header small {
-  font-size: 12px;
-  color: #656d76;
-}
-
-.demo-account-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.demo-account-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid #d0d7de;
-  border-radius: 8px;
-  background: #fff;
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
-}
-
-.demo-account-item:hover {
-  border-color: #0969da;
-  transform: translateY(-1px);
-  box-shadow: 0 10px 20px rgba(9, 105, 218, 0.08);
-}
-
-.demo-account-main,
-.demo-account-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.demo-account-main strong {
-  font-size: 14px;
-  color: #1f2328;
-}
-
-.demo-account-main span,
-.demo-account-actions small {
-  font-size: 12px;
-  color: #656d76;
 }
 
 /* ---- Tabs ---- */

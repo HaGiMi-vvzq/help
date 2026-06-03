@@ -15,9 +15,6 @@ const pageSize = 20
 const totalPages = computed(() => Math.ceil(store.total / pageSize))
 const openCount = computed(() => store.needs.filter((item) => item.status === '开放').length)
 const teamCount = computed(() => store.needs.filter((item) => item.type === '组队').length)
-const featuredNeed = computed(() =>
-  store.needs.find((item) => item.username === 'alice' || item.title.includes('数据可视化')) || store.needs[0] || null,
-)
 const latestDate = computed(() => {
   const latest = store.needs[0]?.created_at
   return latest ? latest.slice(0, 10) : '--'
@@ -47,10 +44,6 @@ function onPageChange(nextPage: number) {
 
 function goToNeedDetail(needId: number) {
   router.push(`/needs/${needId}`)
-}
-
-function goToMatch(needId: number) {
-  router.push(`/needs/${needId}/matches`)
 }
 
 function typeTagType(type: Need['type']) {
@@ -151,41 +144,6 @@ function formatDate(iso: string) {
           <el-icon :size="16"><Plus /></el-icon>
           发布需求
         </el-button>
-      </section>
-
-      <section class="surface-card demo-flow">
-        <div class="surface-section-title">
-          <div>
-            <span class="eyebrow">Demo Flow</span>
-            <h2>推荐演示路径</h2>
-          </div>
-          <span class="demo-flow-hint">从 AI 到匹配，再到联系，三屏就能讲清楚。</span>
-        </div>
-        <div class="demo-flow-grid">
-          <button type="button" class="demo-flow-card" @click="router.push('/agent')">
-            <span class="demo-flow-step">01</span>
-            <strong>打开 Agent 工作台</strong>
-            <p>上传材料、生成计划、整理草稿，展示 AI 是如何参与决策的。</p>
-          </button>
-          <button
-            type="button"
-            class="demo-flow-card"
-            :disabled="!featuredNeed"
-            @click="featuredNeed && goToMatch(featuredNeed.id)"
-          >
-            <span class="demo-flow-step">02</span>
-            <strong>进入匹配结果页</strong>
-            <p>
-              直接看候选人对比、AI 推荐理由和起草私信。
-              <span v-if="featuredNeed" class="demo-flow-inline">当前推荐：{{ featuredNeed.title }}</span>
-            </p>
-          </button>
-          <button type="button" class="demo-flow-card" @click="router.push('/messages')">
-            <span class="demo-flow-step">03</span>
-            <strong>查看消息推进</strong>
-            <p>从匹配转到沟通，把“找到人”继续推进到“开始合作”。</p>
-          </button>
-        </div>
       </section>
 
       <section v-loading="store.loading" class="plaza-results">
@@ -341,78 +299,6 @@ function formatDate(iso: string) {
   display: flex;
   flex-direction: column;
   gap: 18px;
-}
-
-.demo-flow {
-  padding: 18px 20px;
-}
-
-.demo-flow-hint {
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-
-.demo-flow-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.demo-flow-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 170px;
-  padding: 18px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-panel);
-  text-align: left;
-  cursor: pointer;
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
-}
-
-.demo-flow-card:hover:not(:disabled) {
-  transform: translateY(-2px);
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
-}
-
-.demo-flow-card:disabled {
-  cursor: default;
-  opacity: 0.72;
-}
-
-.demo-flow-step {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--bg-panel-muted);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.demo-flow-card strong {
-  font-size: 16px;
-  color: var(--text-primary);
-}
-
-.demo-flow-card p {
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--text-secondary);
-}
-
-.demo-flow-inline {
-  display: block;
-  margin-top: 6px;
-  color: var(--color-primary);
-  font-weight: 600;
 }
 
 .need-grid {
@@ -577,10 +463,6 @@ function formatDate(iso: string) {
   .plaza-toolbar {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .demo-flow-grid {
-    grid-template-columns: 1fr;
   }
 
   .toolbar-left {

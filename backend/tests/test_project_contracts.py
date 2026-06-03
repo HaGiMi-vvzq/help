@@ -214,15 +214,15 @@ class ProjectContractTests(unittest.TestCase):
         self.assertIn("return false", agent_store)
 
 
-    def test_frontend_surfaces_demo_ready_entry_points(self):
+    def test_frontend_surfaces_entry_points(self):
         login_view = (FRONTEND / "src" / "views" / "LoginView.vue").read_text(encoding="utf-8")
         need_plaza = (FRONTEND / "src" / "views" / "NeedPlazaView.vue").read_text(encoding="utf-8")
 
-        self.assertIn("Hackathon Demo", login_view)
-        self.assertIn("demo-account-panel", login_view)
-        self.assertIn("loginAsDemo", login_view)
-        self.assertIn("featuredNeed", need_plaza)
-        self.assertIn("demo-flow-card", need_plaza)
+        self.assertIn("校园AI互助匹配", login_view)
+        self.assertIn("handleLogin", login_view)
+        self.assertIn("handleRegister", login_view)
+        self.assertIn("need-grid", need_plaza)
+        self.assertIn("need-card", need_plaza)
 
     def test_frontend_layout_keeps_pages_scrollable_and_hides_debug_overlay(self):
         global_css = (FRONTEND / "src" / "styles" / "global.css").read_text(encoding="utf-8")

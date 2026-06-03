@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /d/C1/help log --oneline -5)"
+    ]
+  }
+}

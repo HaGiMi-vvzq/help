@@ -84,6 +84,13 @@ async def migrate_sqlite_schema(conn: AsyncConnection) -> None:
             "selected_user_ids": "JSON",
         },
     )
+    await ensure_columns(
+        "users",
+        {
+            "role": "VARCHAR(20) DEFAULT 'user'",
+            "is_active": "BOOLEAN DEFAULT 1",
+        },
+    )
     await conn.exec_driver_sql("UPDATE agent_sessions SET updated_at = COALESCE(updated_at, created_at)")
     await conn.exec_driver_sql("UPDATE agent_tasks SET retry_count = COALESCE(retry_count, 0)")
 

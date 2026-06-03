@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select as _s
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import BACKEND_DIR
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.guardrails.rate_limiter import get_rate_limiter
 from app.integrations.client import AIClient, apply_runtime_config
 from app.models.system_config import SystemConfig
 from app.models.user import User
@@ -70,9 +71,14 @@ async def update_settings(
 @router.post("/test-api-key")
 async def test_api_key(
     data: SettingsApiKeyCheck,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    limiter = get_rate_limiter()
+    client_ip = request.client.host if request.client else "unknown"
+    if not limiter.check(f"test-api-key:{client_ip}"):
+        raise HTTPException(429, "API Key 检测请求过于频繁，请稍后再试")
     key = data.deepseek_api_key.strip()
     if not key:
         raise HTTPException(400, "请输入 API Key")
