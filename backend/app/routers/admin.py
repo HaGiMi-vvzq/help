@@ -15,7 +15,7 @@ from app.schemas.user import (
 )
 from app.services import admin_service
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
 # ── Stats ──────────────────────────────────────────────────────────

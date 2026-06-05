@@ -9,9 +9,10 @@ from logging.handlers import RotatingFileHandler
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from starlette.responses import JSONResponse, Response
 
-from app.core.config import settings as app_settings
+from app.core.config import settings as app_settings, is_postgres, is_sqlite
 from app.core.database import Base, engine, async_session, backup_db, migrate_sqlite_schema
 from app.core.events import get_event_bus
 from app.knowledge.skill_graph import get_skill_graph
@@ -157,12 +158,14 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
 
+    app.add_middleware(GZipMiddleware, minimum_size=500)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     # ── Global exception handlers ──────────────────────────────────
@@ -206,9 +209,9 @@ def create_app() -> FastAPI:
         # Exact match first, then suffix patterns
         event = None
         for (m, p), e in [
-            (("POST", "/api/auth/register"), "register"),
-            (("POST", "/api/needs"), "publish_need"),
-            (("POST", "/api/messages"), "send_message"),
+            (("POST", "/api/v1/auth/register"), "register"),
+            (("POST", "/api/v1/needs"), "publish_need"),
+            (("POST", "/api/v1/messages"), "send_message"),
         ]:
             if method == m and path == p:
                 event = e
@@ -258,6 +261,33 @@ def create_app() -> FastAPI:
     app.include_router(settings.router)
     app.include_router(admin.router)
 
+    # ── File serving for avatars (MinIO proxy) ──
+    from fastapi.responses import FileResponse, Response
+    import mimetypes
+
+    @app.get("/api/v1/files/{storage}/{path:path}")
+    async def serve_file(storage: str, path: str):
+        if storage == "local":
+            file_path = os.path.join(BASE_DIR, "..", "uploads", path)
+            if os.path.isfile(file_path):
+                mime, _ = mimetypes.guess_type(file_path)
+                return FileResponse(file_path, media_type=mime or "application/octet-stream")
+        elif storage == "avatars":
+            try:
+                from minio import Minio
+                client = Minio(
+                    os.getenv("MINIO_ENDPOINT", "minio:9000"),
+                    access_key=os.getenv("MINIO_ACCESS_KEY", ""),
+                    secret_key=os.getenv("MINIO_SECRET_KEY", ""),
+                    secure=False,
+                )
+                data = client.get_object("avatars", path)
+                mime, _ = mimetypes.guess_type(path)
+                return Response(content=data.read(), media_type=mime or "image/png")
+            except Exception:
+                pass
+        raise HTTPException(404, "File not found")
+
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     GRAPH_PATH = os.path.join(BASE_DIR, "..", "skill_graph.json")
 
@@ -271,6 +301,16 @@ def create_app() -> FastAPI:
             )
             sys.exit(1)
 
+        # Sentry
+        if app_settings.SENTRY_DSN:
+            import sentry_sdk
+            sentry_sdk.init(
+                dsn=app_settings.SENTRY_DSN,
+                traces_sample_rate=0.1,
+                environment="production" if not app_settings.DEBUG else "development",
+            )
+            logger.info("Sentry initialized")
+
         # Logs directory
         logs_dir = os.path.join(BASE_DIR, "..", "logs")
         os.makedirs(logs_dir, exist_ok=True)
@@ -279,23 +319,54 @@ def create_app() -> FastAPI:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
             await migrate_sqlite_schema(conn)
+
+        # Redis (best-effort)
+        try:
+            from app.core.redis import get_redis
+            await get_redis()
+        except Exception:
+            logger.info("Redis not available — running without cache")
+
         graph = get_skill_graph()
         graph.from_file(GRAPH_PATH)
-        logger.info("App started, DB ready, graph loaded (%d edges)", len(graph))
+        logger.info("App started, DB ready (%s), graph loaded (%d edges)",
+                    "postgres" if is_postgres() else "sqlite" if is_sqlite() else "unknown",
+                    len(graph))
 
     @app.on_event("shutdown")
     async def shutdown():
         get_skill_graph().to_file(GRAPH_PATH)
+        try:
+            from app.core.redis import close_redis
+            await close_redis()
+        except Exception:
+            pass
+        try:
+            from app.integrations.client import AIClient
+            await AIClient.close_http()
+        except Exception:
+            pass
         await engine.dispose()
 
-    @app.get("/api/skills")
+    @app.get("/api/v1/skills")
     async def list_skills():
         return SkillRegistry.list_all()
 
-    @app.get("/api/health")
+    @app.get("/api/v1/health")
+    @app.get("/api/health")  # backward compat
     async def health():
         checks: dict = {"db": "ok"}
-        # DeepSeek connectivity check (non-blocking)
+
+        # Redis check
+        try:
+            from app.core.redis import get_redis
+            r = await get_redis()
+            await r.ping()
+            checks["redis"] = "ok"
+        except Exception:
+            checks["redis"] = "unavailable"
+
+        # DeepSeek connectivity check
         try:
             from app.integrations.client import get_ai_client
             client = get_ai_client()
@@ -305,6 +376,7 @@ def create_app() -> FastAPI:
                 checks["deepseek"] = "configured"
         except Exception:
             checks["deepseek"] = "error"
+
         # Qwen model check
         try:
             from app.adapters.qwen_adapter import Qwen3EmbedAdapter
@@ -315,7 +387,9 @@ def create_app() -> FastAPI:
                 checks["qwen_embed"] = "not_loaded"
         except Exception:
             checks["qwen_embed"] = "not_loaded"
-        return {"status": "ok" if checks.get("db") == "ok" else "degraded", "checks": checks}
+
+        all_ok = checks.get("db") == "ok"
+        return {"status": "ok" if all_ok else "degraded", "checks": checks}
 
     return app
 

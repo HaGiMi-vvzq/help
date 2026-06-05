@@ -90,10 +90,13 @@ async def get_needs(
     user_id: int | None = None,
     viewer_id: int | None = None,
 ) -> tuple[list[NeedResponse], int]:
+    from sqlalchemy import func as sqlfunc
+
     base = select(Need).options(selectinload(Need.user))
-    count_query = select(Need)
+    count_base = select(sqlfunc.count()).select_from(Need)
 
     query = base
+    count_query = count_base
     if status:
         query = query.where(Need.status == status)
         count_query = count_query.where(Need.status == status)
@@ -104,8 +107,7 @@ async def get_needs(
         query = query.where(Need.user_id == user_id)
         count_query = count_query.where(Need.user_id == user_id)
 
-    total_result = await db.execute(count_query)
-    total = len(total_result.scalars().all())
+    total = (await db.execute(count_query)).scalar() or 0
 
     query = query.order_by(Need.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)

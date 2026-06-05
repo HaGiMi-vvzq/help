@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, Query
+import asyncio
+import json
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +14,60 @@ from app.models.user import User
 from app.schemas.message import MessageCreate, MessageResponse
 from app.services import message_service
 
-router = APIRouter(prefix="/api/messages", tags=["messages"])
+router = APIRouter(prefix="/api/v1/messages", tags=["messages"])
+logger = logging.getLogger(__name__)
+
+# WebSocket connection registry: user_id -> list of WebSocket connections
+_ws_connections: dict[int, list[WebSocket]] = {}
+
+
+async def notify_user(user_id: int, event: str, data: dict) -> None:
+    """Push a real-time event to all WebSocket connections for a user."""
+    conns = _ws_connections.get(user_id, [])
+    payload = json.dumps({"event": event, "data": data}, ensure_ascii=False)
+    dead = []
+    for ws in conns:
+        try:
+            await ws.send_text(payload)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        conns.remove(ws)
+
+
+@router.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket, token: str = Query(...)):
+    """WebSocket for real-time message notifications."""
+    from app.core.security import decode_access_token
+    payload = decode_access_token(token)
+    if not payload:
+        await ws.close(code=4001, reason="Invalid token")
+        return
+
+    user_id = payload.get("user_id")
+    if not user_id:
+        await ws.close(code=4001, reason="Invalid token")
+        return
+
+    await ws.accept()
+    _ws_connections.setdefault(user_id, []).append(ws)
+    logger.debug("WebSocket connected: user_id=%d", user_id)
+
+    try:
+        while True:
+            # Keep alive — wait for client messages (we ignore them, just keep connection open)
+            data = await ws.receive_text()
+            if data == "ping":
+                await ws.send_text(json.dumps({"event": "pong"}))
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.debug("WebSocket error for user_id=%d", user_id, exc_info=True)
+    finally:
+        conns = _ws_connections.get(user_id, [])
+        if ws in conns:
+            conns.remove(ws)
+        logger.debug("WebSocket disconnected: user_id=%d", user_id)
 
 
 @router.get("/notifications")
@@ -80,7 +137,19 @@ async def send_message(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await message_service.send_message(db, user.id, data, get_event_bus())
+    # Content moderation
+    from app.guardrails.content_moderator import moderate_message
+    mod_result = moderate_message(data.content)
+    if mod_result.blocked:
+        raise HTTPException(400, detail=f"消息包含违规内容（{', '.join(mod_result.reasons)}）")
+
+    msg = await message_service.send_message(db, user.id, data, get_event_bus())
+
+    # Audit log
+    from app.services.audit_service import log_message_sent
+    asyncio.create_task(log_message_sent(user.id, msg.id, data.receiver_id))
+
+    return msg
 
 
 @router.get("/conversations")

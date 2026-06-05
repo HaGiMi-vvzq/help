@@ -63,6 +63,8 @@ const stageMessages = computed(() => {
   return map
 })
 
+let autoRetryTimer: ReturnType<typeof setTimeout> | null = null
+
 onMounted(async () => {
   try {
     await store.fetchNeedApplications(needId)
@@ -71,16 +73,23 @@ onMounted(async () => {
   }
   try {
     const result = await store.fetchMatches(needId)
-    if ((!result?.matches?.length) && result?.matching_active) {
+    if (!result?.matches?.length) {
       startStream()
+      autoRetryTimer = setTimeout(() => {
+        if (store.matches.length === 0) handleRefresh()
+      }, 8000)
     }
   } catch {
     startStream()
+    autoRetryTimer = setTimeout(() => {
+      if (store.matches.length === 0) handleRefresh()
+    }, 8000)
   }
 })
 
 onUnmounted(() => {
   if (eventSource) eventSource.close()
+  if (autoRetryTimer) clearTimeout(autoRetryTimer)
 })
 
 watch(

@@ -9,7 +9,7 @@ from app.models.user import User
 from app.schemas.user import ProfileUpdate, UserResponse
 from app.services import profile_service
 
-router = APIRouter(prefix="/api/profile", tags=["profile"])
+router = APIRouter(prefix="/api/v1/profile", tags=["profile"])
 
 
 class ExtractTagsRequest(BaseModel):

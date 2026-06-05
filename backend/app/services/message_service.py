@@ -25,6 +25,18 @@ async def send_message(
             "sender_id": sender_id, "receiver_id": data.receiver_id, "need_id": data.need_id,
         })
 
+    # WebSocket real-time notification
+    try:
+        from app.routers.messages import notify_user
+        import asyncio as _asyncio
+        _asyncio.create_task(notify_user(data.receiver_id, "new_message", {
+            "sender_id": sender_id,
+            "need_id": data.need_id,
+            "content": data.content[:100],
+        }))
+    except Exception:
+        pass
+
     return MessageResponse.model_validate(msg)
 
 

@@ -6,21 +6,44 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-from app.core.config import settings
+from app.core.config import settings, is_postgres, is_sqlite
 
 logger = logging.getLogger(__name__)
 
-engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
+_connect_args: dict = {}
+_pool_kwargs: dict = {
+    "pool_size": settings.DB_POOL_SIZE,
+    "max_overflow": settings.DB_MAX_OVERFLOW,
+    "pool_recycle": settings.DB_POOL_RECYCLE,
+}
+
+if is_postgres():
+    _connect_args = {"server_settings": {"application_name": "campus_match"}}
+elif is_sqlite():
+    _connect_args = {"check_same_thread": False}
+    _pool_kwargs = {}
+
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=settings.DEBUG,
+    connect_args=_connect_args,
+    **_pool_kwargs,
+)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-# Enable WAL mode for better concurrency and crash safety
-@event.listens_for(engine.sync_engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
+if is_sqlite():
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
+def _backend_dir() -> str:
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class Base(DeclarativeBase):
@@ -28,8 +51,8 @@ class Base(DeclarativeBase):
 
 
 async def migrate_sqlite_schema(conn: AsyncConnection) -> None:
-    """Best-effort additive migrations for the local demo database."""
-    if not settings.DATABASE_URL.startswith("sqlite"):
+    """Best-effort additive migrations for local SQLite database only."""
+    if not is_sqlite():
         return
 
     async def existing_columns(table: str) -> set[str]:
@@ -101,10 +124,13 @@ async def get_db():
 
 
 def backup_db():
-    """Create a timestamped backup of the database file."""
+    """Create a timestamped backup of the database file (SQLite only)."""
+    if not is_sqlite():
+        return
+
     db_path = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "")
     if not os.path.isabs(db_path):
-        db_path = os.path.join(os.path.dirname(__file__), "..", "..", db_path)
+        db_path = os.path.join(_backend_dir(), db_path)
     db_path = os.path.normpath(db_path)
     if os.path.exists(db_path):
         backup_dir = os.path.join(os.path.dirname(db_path), "db_backups")
@@ -114,7 +140,6 @@ def backup_db():
         backup_path = os.path.join(backup_dir, f"app_{ts}.db")
         shutil.copy2(db_path, backup_path)
         logger.info("DB backup created: %s", backup_path)
-        # Keep only last 5 backups
         backups = sorted(os.listdir(backup_dir))
         while len(backups) > 5:
             os.remove(os.path.join(backup_dir, backups[0]))

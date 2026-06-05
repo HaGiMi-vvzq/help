@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     DATABASE_URL: str = f"sqlite+aiosqlite:///{DB_PATH.as_posix()}"
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_RECYCLE: int = 3600
+
+    REDIS_URL: str = "redis://localhost:6379/0"
 
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
@@ -31,6 +36,17 @@ class Settings(BaseSettings):
     QWEN_EMBED_MRL_DIM: int = 0
 
     CORS_ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    SENTRY_DSN: str = ""
+
+    # SMTP (optional — email verification & password reset)
+    SMTP_HOST: str = ""
+    SMTP_PORT: str = "587"
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "noreply@campus-match.com"
+
+    # Site domain
+    DOMAIN: str = "http://localhost"
 
     @field_validator("DEBUG", mode="before")
     @classmethod
@@ -44,5 +60,12 @@ class Settings(BaseSettings):
         return value
 
 
-settings = Settings()
+def is_postgres() -> bool:
+    return "postgresql" in settings.DATABASE_URL
 
+
+def is_sqlite() -> bool:
+    return "sqlite" in settings.DATABASE_URL
+
+
+settings = Settings()

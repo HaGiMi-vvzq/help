@@ -15,7 +15,7 @@ from app.integrations.client import AIClient, apply_runtime_config
 from app.models.system_config import SystemConfig
 from app.models.user import User
 
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 
 
 class SettingsUpdate(BaseModel):

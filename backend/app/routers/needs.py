@@ -25,7 +25,7 @@ from app.schemas.need import (
 )
 from app.services import match_engine, need_application_service, need_service
 
-router = APIRouter(prefix="/api/needs", tags=["needs"])
+router = APIRouter(prefix="/api/v1/needs", tags=["needs"])
 
 
 async def _notify_matching_complete(need_id: int):
@@ -62,8 +62,31 @@ async def create_need(
     limiter = get_rate_limiter()
     if not limiter.check_ip(request.client.host if request.client else "unknown"):
         raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+
+    # Content moderation
+    from app.guardrails.content_moderator import moderate_need
+    mod_result = moderate_need(data.title, data.description)
+    if mod_result.blocked:
+        raise HTTPException(status_code=400, detail=f"内容包含违规信息（{', '.join(mod_result.reasons)}）")
+
     need = await need_service.create_need(db, user, data, get_event_bus())
-    match_engine.schedule_matching(need.id, get_event_bus(), notifier=_notify_matching_complete)
+
+    # Post-creation tasks — never fail the request
+    try:
+        match_engine.schedule_matching(need.id, get_event_bus(), notifier=_notify_matching_complete)
+    except Exception:
+        pass
+
+    try:
+        import asyncio
+        from app.services.cache_service import cache_invalidate_pattern
+        from app.services.audit_service import log_need_created
+        asyncio.create_task(cache_invalidate_pattern("needs:list:*"))
+        client_ip = request.client.host if request.client else None
+        asyncio.create_task(log_need_created(user.id, need.id, data.title, client_ip))
+    except Exception:
+        pass
+
     return need
 
 
@@ -131,15 +154,29 @@ async def list_needs(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    items, total = await need_service.get_needs(
-        db,
-        page,
-        page_size,
-        status,
-        type,
-        viewer_id=user.id,
-    )
-    return NeedListResponse(items=items, total=total, page=page, page_size=page_size)
+    # Redis cache for page 1 (hottest path) — TTL 60s
+    if page == 1 and not status and not type:
+        cache_key = f"needs:list:p1_s{page_size}"
+        try:
+            from app.services.cache_service import cache_get
+            cached = await cache_get(cache_key)
+            if cached:
+                return NeedListResponse(**cached)
+        except Exception:
+            pass
+
+    items, total = await need_service.get_needs(db, page, page_size, status, type, viewer_id=user.id)
+    resp = NeedListResponse(items=items, total=total, page=page, page_size=page_size)
+
+    # Cache only page 1 of unfiltered results
+    if page == 1 and not status and not type:
+        try:
+            from app.services.cache_service import cache_set, cache_invalidate_pattern
+            await cache_set(cache_key, resp.model_dump(), ttl=60)
+        except Exception:
+            pass
+
+    return resp
 
 
 @router.get("/mine", response_model=list[NeedResponse])
@@ -308,7 +345,9 @@ async def get_matches(
         raise HTTPException(403, "只能查看自己需求的匹配结果")
 
     matches = await match_engine.get_matches(db, need_id)
-    if not matches and not match_engine.is_matching_active(need_id):
+    # No results? Run matching now (may have been scheduled but failed or not yet run)
+    if not matches:
+        await match_engine.cancel_matching(need_id)
         await match_engine.run_matching(db, need_id, get_event_bus())
         matches = await match_engine.get_matches(db, need_id)
 

@@ -1,46 +1,179 @@
 version: "3.9"
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: campus-db
+    environment:
+      POSTGRES_USER: campus
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-campus_prod}
+      POSTGRES_DB: campus_match
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U campus -d campus_match"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - campus-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: campus-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - campus-net
+
+  minio:
+    image: minio/minio:latest
+    container_name: campus-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-campus_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-change-me-minio}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - campus-net
+
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: campus-match-backend
-    ports:
-      - "8000:8000"
+    container_name: campus-backend
     environment:
-      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-sk-your-api-key-here}
+      - DATABASE_URL=postgresql+asyncpg://campus:${DB_PASSWORD:-campus_prod}@postgres:5432/campus_match
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       - DEEPSEEK_PRO_MODEL=${DEEPSEEK_PRO_MODEL:-deepseek-v4-pro}
       - DEEPSEEK_FLASH_MODEL=${DEEPSEEK_FLASH_MODEL:-deepseek-v4-flash}
-      - DEBUG=${DEBUG:-false}
+      - DEBUG=false
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - UVICORN_WORKERS=${UVICORN_WORKERS:-4}
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost}
+      - WORKERS=${WORKERS:-4}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://localhost}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_USER:-campus_admin}
+      - MINIO_SECRET_KEY=${MINIO_PASSWORD:-change-me-minio}
     volumes:
-      - app_data:/app
-      - ./backend/logs:/app/logs
+      - app_logs:/app/logs
+      - app_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     restart: unless-stopped
     networks:
-      - campus-match
+      - campus-net
+
+  arq-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: campus-worker
+    command: python -m app.worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://campus:${DB_PASSWORD:-campus_prod}@postgres:5432/campus_match
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEBUG=false
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - app_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - campus-net
 
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    container_name: campus-match-frontend
+    container_name: campus-frontend
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
     depends_on:
       - backend
     restart: unless-stopped
     networks:
-      - campus-match
+      - campus-net
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: campus-certbot
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h; done'"
+    restart: unless-stopped
+    networks:
+      - campus-net
+
+  db-backup:
+    image: postgres:16-alpine
+    container_name: campus-db-backup
+    environment:
+      PGPASSWORD: ${DB_PASSWORD:-campus_prod}
+    volumes:
+      - ./backups:/backups
+    entrypoint: |
+      /bin/sh -c '
+      while :; do
+        pg_dump -h postgres -U campus campus_match | gzip > /backups/db_$$(date +%Y%m%d_%H%M).sql.gz
+        find /backups -name "db_*.sql.gz" -mtime +7 -delete
+        sleep 86400
+      done'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - campus-net
 
 volumes:
-  app_data:
+  pg_data:
+  redis_data:
+  minio_data:
+  app_logs:
+  app_uploads:
 
 networks:
-  campus-match:
+  campus-net:
     driver: bridge

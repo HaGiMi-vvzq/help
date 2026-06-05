@@ -21,7 +21,7 @@ from app.schemas.agent import (
 )
 from app.services import agent_executor, agent_memory, agent_planner, agent_service
 
-router = APIRouter(prefix="/api/agent", tags=["agent"])
+router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
 
 async def ensure_session_owner(db: AsyncSession, session_id: int, user_id: int):

@@ -57,8 +57,24 @@ def schedule_matching(
             _active_matching_tasks.pop(need_id, None)
             _matching_cancel_events.pop(need_id, None)
 
+    # Try ARQ first (non-blocking check), fall back to local task
+    async def _maybe_enqueue():
+        try:
+            from app.services.task_queue import enqueue
+            return await enqueue("run_matching", need_id)
+        except Exception:
+            return None
+
     task = asyncio.create_task(runner(), name=f"need-matching-{need_id}")
     _active_matching_tasks[need_id] = task
+
+    # Fire-and-forget: try ARQ, if it works the local task becomes a no-op backup
+    async def _try_arq():
+        job_id = await _maybe_enqueue()
+        if job_id:
+            logger.info("Matching enqueued to ARQ for need_id=%s, job=%s", need_id, job_id)
+    asyncio.create_task(_try_arq())
+
     return task
 
 

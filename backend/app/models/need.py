@@ -1,8 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
-from sqlalchemy.dialects.sqlite import JSON
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -10,6 +9,11 @@ from app.core.database import Base
 
 class Need(Base):
     __tablename__ = "needs"
+    __table_args__ = (
+        Index("ix_needs_status_type", "status", "type"),
+        Index("ix_needs_user_id", "user_id"),
+        Index("ix_needs_created", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))

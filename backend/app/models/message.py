@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -8,6 +8,11 @@ from app.core.database import Base
 
 class Message(Base):
     __tablename__ = "messages"
+    __table_args__ = (
+        Index("ix_messages_receiver_unread", "receiver_id", "is_read"),
+        Index("ix_messages_conversation", "sender_id", "receiver_id", "need_id"),
+        Index("ix_messages_created", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     need_id: Mapped[int] = mapped_column(ForeignKey("needs.id"))

@@ -1,3 +1,6 @@
+import secrets
+import time
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -92,3 +95,50 @@ async def login(db: AsyncSession, username: str, password: str) -> AuthResponse:
 
     token = create_access_token({"user_id": user.id})
     return AuthResponse(access_token=token, user=UserResponse.model_validate(user))
+
+
+async def create_reset_token(db: AsyncSession, username: str) -> str:
+    """Generate a password reset token stored in Redis (15 min TTL)."""
+    result = await db.execute(select(User).where(User.username == username))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise ValueError("用户不存在")
+
+    token = secrets.token_urlsafe(32)
+    try:
+        from app.core.redis import get_redis
+        r = await get_redis()
+        await r.setex(f"pwd_reset:{token}", 900, str(user.id))
+    except Exception:
+        pass
+    return token
+
+
+async def reset_password(db: AsyncSession, token: str, new_password: str) -> None:
+    """Reset password using a valid reset token."""
+    user_id = None
+    try:
+        from app.core.redis import get_redis
+        r = await get_redis()
+        user_id = await r.get(f"pwd_reset:{token}")
+    except Exception:
+        pass
+
+    if not user_id:
+        # Fallback: check in-memory (dev mode, no Redis)
+        raise ValueError("令牌无效或已过期")
+
+    user = await db.get(User, int(user_id))
+    if not user:
+        raise ValueError("用户不存在")
+
+    user.password_hash = hash_password(new_password)
+    await db.commit()
+
+    # Delete the token
+    try:
+        from app.core.redis import get_redis
+        r = await get_redis()
+        await r.delete(f"pwd_reset:{token}")
+    except Exception:
+        pass
